@@ -1,0 +1,446 @@
+This project implements a simple snake game in pygame.
+Plan: 
+    1. create screen
+    2. create a block class that can be drawn to screen.
+    3. create a snake class that uses blocks:
+        methods:
+            init, eatFood, turn, die, moveForward, draw, hasCrashed
+    3. create a food class drawn as a block:
+        methods:
+            init, reposition
+    4. run the game in a main fxn.
+
+Imports 
+###########################3
+# Imports 
+import pygame
+from pygame.locals import *
+from pygame.math import Vector2
+from sys import exit 
+from random import randint
+
+# Initialise
+pygame.init()
+pygame.mixer.init()
+pygame.font.init()
+
+# Global Constants
+WIDTH = 800; HEIGHT = 500
+SCREEN_SIZE = (WIDTH, HEIGHT+1) # This +1 is because the grid acts strange around the right edge
+screen = pygame.display.set_mode(SCREEN_SIZE, 0, 32)
+pygame.display.set_caption('Snake with Pygame')
+#################################
+
+The snake will move on a matrix of rectangles of dimensions GRID_WIDTH and GRID_HEIGHT. 
+The snake will be green, its head will be a darker shade, the food will be pink, and the screen 
+will have a dark theme. 
+########################3
+# Constants
+DARK_BLUE = (6,6,20)
+CYAN = (0,100,100)
+SNAKE_GREEN = (0,200,50)
+DARK_GREEN = (0,150,0)
+FOOD_PINK = (200,0,200)
+COLUMNS = 20
+ROWS = 25 
+GRID_HEIGHT = 25
+GRID_WIDTH = 20
+GRID_SIZE = (GRID_WIDTH, GRID_HEIGHT)
+SCORE_FONT = pygame.font.SysFont('comicsans', 40)
+clock = pygame.time.Clock()
+##################################
+The constants COLUMNS and ROWS determine the number of columns and rows and in this case, they 
+are both factors of WIDTH and HEIGHT so that all grids form nicely. The drawGrid() fxn does this.
+#################################
+def drawGrid():
+    # Draw the grid lines
+    # Draw horizontal lines at regular intervals at distances of GRID_HEIGHT
+    for i in range(0, HEIGHT, GRID_HEIGHT):
+        pygame.draw.line(screen, CYAN, (0,i), (WIDTH,i)) 
+    # Draw vertical lines at regular intervals at distances of GRID_WIDTH
+    for j in range(0, WIDTH, GRID_WIDTH):
+        pygame.draw.line(screen, CYAN, (j,0), (j,HEIGHT))
+##########################################
+# The main fxn will call a drawWindow() fxn 
+
+Let me create the block class. It inherits from the pygame.Rect class so it requires x-pos, y-pos, 
+width and height.
+######################
+class Block(pygame.Rect):
+    def __init__(self, x=1, y=1, width=GRID_WIDTH, length=GRID_HEIGHT):
+        super(Block, self).__init__(x, y, width, length)
+        self.direction = Vector2(0,0)
+        self.pos = (self.x, self.y)
+        self.ind = 0
+        self.colour = None
+##################################
+
+I created a global fxn drawBlock() (which should really have been a method of Block) to perform the 
+drawing. 
+###############################
+def drawBlock(block_list, col=None):
+    for block in block_list:
+        if block.colour:
+             pygame.draw.rect(screen, block.colour, block)
+        else:
+            pygame.draw.rect(screen, col, block)
+#################################
+It takes in a list of blocks that are to be drawn to the screen.
+Pass in the colour the block is to be if it doesn't already have its own colour.
+
+At the bottom of the script, I could now test the block in the main() fxn as follows
+#############################
+def main():
+    b = Block()
+    running = True
+    while running:
+        clock.tick(60)
+
+        # display
+        screen.fill(DARK_BLUE)
+        drawGrid()
+        drawBlock([b], DARK_GREEN)
+        pygame.display.update()
+
+        # exit
+        for event in pygame.event.get():
+            if event.type == QUIT:
+                running = False
+
+main()
+###############################
+The display section will later be put into a function of its own after the snake and food classes
+have been created.
+
+The snake will be made up of a string blocks, each block will have an index, ind, to get the 
+relative positions between one block and the one following. You'll see how it's done.
+The snake will initially just be a head block, have a direction of (-1,0) (moving left) and the entire
+body (list of blocks) will just be composed of the head. When the snake crashes, it will be reset.
+#################################
+class Snake(object):
+
+    all_pos = []
+
+    def __init__(self):
+        self.head = Block(WIDTH/2, HEIGHT/2)
+        self.head.direction = Vector2(-1,0)
+        self.head.ind = -1
+        self.head.colour = DARK_GREEN
+        self.body = [self.head]
+        self.all_pos.append(self.head.pos)
+        self.length = len(self.body) # The length will determine the score
+        self.is_dead = False
+
+    def reset(self):
+        self.head.x, self.head.y = (WIDTH/2, HEIGHT/2)
+        self.all_pos = []
+        self.head.direction = Vector2(-1,0)
+        self.head.ind = -1
+        # self.head.colour = DARK_GREEN
+        self.body = [self.head]
+        self.all_pos.append(self.head.pos)
+        self.length = len(self.body)
+        self.is_dead = False
+
+    def draw(self):
+        # draw snake blocks onto the screen
+        drawBlock(self.body, SNAKE_GREEN)
+############################################
+The snake's head is a dark green colour.
+The body only contains the head block.
+The list of the body's blocks' positions, all_pos, only contains the head's position.
+The index of the head of the snake is initially -1. This is due to the method in which I chose to 
+implement the movement of the snake. 
+For the movement of the snake, there are a few things I considered:
+1. The snake will always have a direction property, a vector indicating the x and y direction:
+    1 for increasing; -1 for decreasing; 0 for not changing.
+2. Every iteration of the while loop will move the snake a single grid-cell in that direction.
+3. When the body contains more than just the head, the other segments will get the last position of 
+    the segment in front of them, so each segment has an index 1 less than the one in front of it, 
+    and every segment has an index less than that of the head.
+4. The snake will not move forward if it has crashed. Speaking of which, the snake can only crash/die 
+    if it crashes into itself. The hasCrashed() method takes care of this.
+############################################
+    def hasCrashed(self):
+        # Check only the current positions that the segments occupy
+        self.all_pos = self.all_pos[-len(self.body):] 
+        # Check if the head's position is anywhere in all_pos, other than in the last position
+        if self.head.pos in self.all_pos[:-1]:
+            self.die()
+        return self.is_dead
+
+    def die(self):
+        self.is_dead = True
+###########################################3
+
+5. If the all_pos list is appended to when the head gets a new position and all subsequent segments 
+    move and acquire the next segment's previous position, then the very last position will have to be
+    discarded of in order to only keep the current positions of the segments.
+6. If the snake's head goes into the border, move it to the other side immediately, ie, if it leaves 
+    the left part of the screen, make it enter from the right; if it leaves from the top, it enters 
+    from the bottom and vice-versa.
+#################################################
+    def moveForward(self):
+    ''' Change the positions of all snake segments '''
+    # Check whether it's already crashed or not
+    if self.hasCrashed():
+        # repos_food = pygame.event.Event(REFOOD, message="Reposition Food")
+        # pygame.event.post(repos_food)
+        self.reset()
+        self.all_pos = []
+
+    elif not self.is_dead:
+        # Change the x and y coordinates of the head 1 cell unit in the snake's direction
+        self.head.x += self.head.direction.x * GRID_WIDTH
+        self.head.y += self.head.direction.y * GRID_HEIGHT
+
+        # handle entering boundaries
+        if self.head.x < 0: # leaves the left
+            self.head.x = WIDTH - GRID_WIDTH 
+            # WIDTH - GRID_WIDTH because the top-left of the head has to move into the screen by at least 1 
+            # cell unit/width, not the edge/outside of the screen. Same with HEIGHT - GRID_HEIGHT
+        elif self.head.x > WIDTH-5:  # leaves the right
+            self.head.x = 0 
+        if self.head.y < 0: # leaves the top
+            self.head.y = HEIGHT - GRID_HEIGHT 
+        elif self.head.y > HEIGHT-5: # leaves the bottom
+            self.head.y = 0 
+
+        self.head.pos = (self.head.x, self.head.y) # Update the position of the head and save it as the 
+        self.all_pos.append(self.head.pos)  # last position in all_pos
+
+        # Shift the segments along
+        # Here, the segments will get the previous positions of the segments in front of them
+        for i in range(1, len(self.body)): # Not from the first, because I'm not shifting the head.
+            try:
+                segment = self.body[i] # get segment
+                segment.pos = self.all_pos[segment.ind] # get the position using its index, 1 more than the
+                segment.x = segment.pos[0]              # next one
+                segment.y = segment.pos[1] # update its x and y to the position returned
+            except IndexError:
+                pass # list index out of range
+        
+        # Make the number of positions no longer than the number of segments, ie, truncate all_pos to 
+        # contain only as many positions as the number of segments.
+        if len(self.body) > 1: 
+            self.all_pos = self.all_pos[-len(self.body):]
+#############################################
+Given that all other segments just occupy the previous positions of the head, turning will be 
+very easy to implement. I just have to change the direction property of the head and the body 
+will follow suit.
+#####################################
+    def turn(self, turn_direction):
+        self.head.direction = turn_direction
+##########################################
+Lastly, the snake will have the ability to eat the food object. Before I implement the eatFood() 
+method, I'll show you the food class first.
+
+1. The food class will also use the block class, It will be drawn as a single block.
+2. The food will be initialised at a random position. The x and y index would be a random row and column 
+    multiplied by the screen width and screen height to get the position. I gave the food position a 
+    margin of one row/column from the edge (just to make it a bit easier), so the food should never appear 
+    on the edge row/column.
+3. The food will take in the snake in order that it may check the snake's segments to avoid positioning 
+    itself inside the snake body.
+4. The food will be repositioned whenever the snake's head meets it. To trigger its repositioning, 
+    I created an event that will be triggered whenever the snake eats the food. Back in the
+    declaration of the global constants at the top, I create the event.
+###################################
+REFOOD = USEREVENT + 1 # (user-defined) event posted for repositioning food
+# This can be detected and appropriately responded to, just as with any other event
+#######################################
+The food class goes thus:
+#######################################
+class Food(object):
+
+    def __init__(self, snake):
+        # Place food in a random position on the screen, not on the edge rows and columns
+        self.pos = self.getNewPos()
+        snake_poses = [segment.pos for segment in snake.body]
+        # Avoid placement on snake
+        while self.pos in snake_poses:
+            self.pos = self.getNewPos()
+        self.block = Block(*self.pos)   # create food block
+
+    def getNewPos(self):
+        x_pos = randint(1,WIDTH/COLUMNS-1)*GRID_WIDTH # ranges from 2nd column to 2nd to last
+        y_pos = randint(1,HEIGHT/ROWS-1)*GRID_HEIGHT # ranges from 2nd row to 2nd to last
+        return (x_pos, y_pos)
+
+    def reposition(self, snake):
+        # This fxn will be called from the snake class, when it detects that the food block has
+        # been touched (eaten)
+        snake_poses = [segment.pos for segment in snake.body]
+        self.pos = self.getNewPos()
+        while self.pos in snake_poses:
+            self.pos = self.getNewPos()
+        # self.x, self.y = self.pos[0], self.pos[1]
+
+    def draw(self):
+        # Draw the block a pink colour
+        drawBlock([self.block], FOOD_PINK)
+######################################
+That simple. It's basically a block that gets a random position and needs no direction or index.
+
+We can now finish the snake class with the eatFood() method. It takes in the food object so it knows 
+where it is.
+######################################
+    def eatFood(self, food):
+        # If head meets food, add a segment to snake body
+        if self.head.pos == food.pos:
+            # Move the head, leaving a vacancy right behind it
+            self.head.x += self.head.direction.x * GRID_WIDTH
+            self.head.y += self.head.direction.y * GRID_HEIGHT
+            self.head.pos = (self.head.x, self.head.y)
+            self.all_pos.append(self.head.pos)
+
+            # Create a new segment
+            segment = Block()
+            # Insert new segment right after the head, filling vacancy
+            segment.ind = self.body[-1].ind - 1 # Get next index after last segment in body list --> head
+            segment.pos = self.all_pos[segment.ind] # Get the position from all_pos using its index
+            segment.x = segment.pos[0]
+            segment.y = segment.pos[1]
+            self.body.append(segment) # Add to body
+
+            # Trigger signal (event) to reposition food
+            repos_food = pygame.event.Event(REFOOD, message="Reposition Food")
+            pygame.event.post(repos_food)
+
+            # Update length (for score)
+            self.length = len(self.body)
+
+            return True # if food eaten
+        return # if not food eaten
+#############################################
+That concludes the snake class. 
+
+Since the snake and food each have their draw methods, I can rewrite the drawWindow() fxn.
+It will now also take in the score_text that I will create in the main() fxn.
+#########################
+def drawWindow(snake, food, score_text):
+    ''' This function updates the screen contents '''
+    screen.fill(DARK_BLUE)
+    drawGrid()
+    score = SCORE_FONT.render(score_text, 1, CYAN)
+    screen.blit(score, (20,20)) # blit text - score, at pos - (20,20)
+    food.draw()
+    snake.draw()
+    
+    pygame.display.update()
+###############################
+
+In the main() fxn, I'll create a food instance, a snake instance, the score variable for the score 
+text that will be determined by the length of the snake. 
+I will handle the movement of the snake using the arrow keys.
+##########################################
+
+def main():
+    # Constants
+    Kaa = Snake()
+    fud = Food(Kaa)
+    score = 0
+    fps = 10 # adjust frame-per-second for speed of snake
+
+    # Main loop
+    running = True
+    while running:
+        clock.tick(fps)
+
+        for event in pygame.event.get():
+            # Exit
+            if event.type == QUIT:
+                running = False
+
+            # Change food position
+            if event.type == REFOOD:
+                fud = Food(Kaa)
+
+            # Handle turns
+            if event.type == KEYDOWN:
+                if event.key == K_UP:
+                    turn_direction = Vector2(0,-1)  # go up, reduce y distance
+                    Kaa.turn(turn_direction)
+                elif event.key == K_DOWN:
+                    turn_direction = Vector2(0,1)   # go down, increase y distance
+                    Kaa.turn(turn_direction)
+                elif event.key == K_LEFT:
+                    turn_direction = Vector2(-1,0)  # go left, reduce x
+                    Kaa.turn(turn_direction)
+                elif event.key == K_RIGHT:
+                    turn_direction = Vector2(1,0)   # go right, increase x
+                    Kaa.turn(turn_direction)
+                else: pass
+        
+        Kaa.moveForward()
+        Kaa.eatFood()
+        # Update score after eating
+        score = Kaa.length-1 # Minus one because initially the length will be 1 because of the head
+        score_text = "Score: " + str(score)
+        
+        drawWindow(Kaa, fud, score_text)
+    
+    pygame.quit()
+#############################################
+
+At the end of the script.
+############################33
+if __name__ == "__main__":
+    main()
+    exit()
+#############################
+
+Below is a log of my process. It's incomplete though, and without dates.
+
+create screen
+draw grid
+create snake class
+draw a single block to screen
+draw multiple blocks to screen
+create block object
+draw block object to screen
+draw snake, made of block objects, to screen
+handle snake movement
+    linear motion
+    turn motion
+create food class
+draw food, made of block object, to screen randomly
+handle snake eat method
+handle growth method
+handle scoring
+
+1. create screen
+I filled it with a dark blue colour 
+
+2. draw grid
+I drew 800/20 columns and 500/25 rows. I plan to make grid smaller
+
+3. create snake class
+Methods that came to mind: 
+    __init__, eatFood, turn, die, moveForward, draw, hasCrashed
+
+4. draw a single block to screen
+created a drawBlock function that takes a list of rects/blocks and 
+draws them onto the screen. 
+
+5. drew a block from the snake body onto the screen
+6. configured events to control the movement of the snake head
+7. created an alert for when the head leaves the screen limits
+8. made so that the food repositions itself when the snake has uncrashed
+9. created a Block class with direction and pos properties that 
+    inherits from pygame.Rect so that I can draw this instead and
+    also take advantage of the direction property
+10. To handle snake movement, I decided to make a list of the heads 
+    moves, and then all other segments will have as their positions
+    indexes of the positions already had by head. This involves 
+    giving the Block class an ind property
+11. direction property unnecessary. I just use the positions of head
+
+###############3
+def moveForward():
+    move head
+    for all other segments:
+        if segment.pos in turn_points:
+            segment.direction = direction of previous segment
+        move segment in its direction
+        handle errors
