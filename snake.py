@@ -1,9 +1,9 @@
 # C:/Users/BADUNGS/AppData/Local/Programs/Python/Python37/argon
 import pygame
 from pygame.locals import *
-from gameobjects.vector2 import Vector2
+from pygame.math import Vector2
 from sys import exit
-from random import *
+from random import randint
 from logging import *
 
 basicConfig(
@@ -34,9 +34,9 @@ DARK_GREEN = (0,150,0)
 FOOD_PINK = (200,0,200)
 COLUMNS = 20 # 40 # 10 # 20 # 5
 ROWS = 25 # 50 # 10 # 25 # 5
-GRID_HEIGHT = HEIGHT/(HEIGHT/ROWS) # How come not by ROWS?
-GRID_WIDTH = WIDTH/(WIDTH/COLUMNS)
-GRID_SIZE = (GRID_WIDTH, GRID_HEIGHT)
+GRID_HEIGHT = ROWS # How come not by ROWS?
+GRID_WIDTH = COLUMNS
+# GRID_SIZE = (GRID_WIDTH, GRID_HEIGHT)
 
 clock = pygame.time.Clock()
 
@@ -46,7 +46,6 @@ def drawBlock(block_list, col):
              pygame.draw.rect(screen, block.colour, block)
         else:
             pygame.draw.rect(screen, col, block)
-    # pass
 
 def drawGrid():
     # Draw the grid lines
@@ -77,28 +76,32 @@ class Block(pygame.Rect):
         
 
 class Food(object):
-
+    
     def __init__(self, snake):
-        self.pos = (randint(2,WIDTH/COLUMNS-2)*GRID_WIDTH, 
-                randint(2,HEIGHT/ROWS-2)*GRID_HEIGHT)
+        # Place food in a random position on the screen, not on the edge rows and columns
+        self.pos = self.getNewPos()
         snake_poses = [segment.pos for segment in snake.body]
+        # Avoid placement on snake
         while self.pos in snake_poses:
-            info('Food in snake')
-            self.pos = (randint(1,WIDTH/COLUMNS-1)*GRID_WIDTH, 
-                    randint(1,HEIGHT/ROWS-1)*GRID_HEIGHT)
-        self.block = Block(*self.pos)
+            self.pos = self.getNewPos()
+        self.block = Block(*self.pos)   # create food block
 
-    def repos(self, snake):
+    def getNewPos(self):
+        x_pos = randint(1,WIDTH/COLUMNS-1)*GRID_WIDTH # ranges from 2nd column to 2nd to last
+        y_pos = randint(1,HEIGHT/ROWS-1)*GRID_HEIGHT # ranges from 2nd row to 2nd to last
+        return (x_pos, y_pos)
+
+    def reposition(self, snake):
+        # This fxn will be called from the snake class, when it detects that the food block has
+        # been touched (eaten)
         snake_poses = [segment.pos for segment in snake.body]
-        self.pos = (randint(1,WIDTH/COLUMNS-1)*GRID_WIDTH, 
-                randint(1,HEIGHT/ROWS-1)*GRID_HEIGHT)
+        self.pos = self.getNewPos()
         while self.pos in snake_poses:
-            info('Food in snake')
-            self.pos = (randint(1,WIDTH/COLUMNS-1)*GRID_WIDTH, 
-                    randint(1,HEIGHT/ROWS-1)*GRID_HEIGHT)
-        self.x, self.y = self.pos[0], self.pos[1]
+            self.pos = self.getNewPos()
+        # self.x, self.y = self.pos[0], self.pos[1]
 
     def draw(self):
+        # Draw the block a pink colour
         drawBlock([self.block], FOOD_PINK)
 
 
@@ -116,79 +119,94 @@ class Snake(object):
         self.length = len(self.body)
         self.is_dead = False
 
+    def reset(self):
+        self.head.x, self.head.y = (WIDTH/2, HEIGHT/2)
+        self.all_pos = []
+        self.head.direction = Vector2(-1,0)
+        self.head.ind = -1
+        # self.head.colour = DARK_GREEN
+        self.body = [self.head]
+        self.all_pos.append(self.head.pos)
+        self.length = len(self.body)
+        self.is_dead = False
+
     def eatFood(self, food):
         # If head meets food, add a segment to snake body
-        if (self.head.x, self.head.y) == food.pos:
-
+        if self.head.pos == food.pos:
+            # Move the head, leaving a vacancy right behind it
             self.head.x += self.head.direction.x * GRID_WIDTH
             self.head.y += self.head.direction.y * GRID_HEIGHT
             self.head.pos = (self.head.x, self.head.y)
             self.all_pos.append(self.head.pos)
-            # self.head.ind += 1
 
+            # Create a new segment
             segment = Block()
-            segment.ind = self.body[-1].ind - 1
-            segment.pos = self.all_pos[segment.ind]
+            # Insert new segment right after the head, filling vacancy
+            segment.ind = self.body[-1].ind - 1 # Get next index after last segment in body list --> head
+            segment.pos = self.all_pos[segment.ind] # Get the position from all_pos using its index
             segment.x = segment.pos[0]
             segment.y = segment.pos[1]
-            self.body.append(segment)
-            # Signal to reposition food
+            self.body.append(segment) # Add to body
+
+            # Trigger signal (event) to reposition food
             repos_food = pygame.event.Event(REFOOD, message="Reposition Food")
             pygame.event.post(repos_food)
 
+            # Update length (for score)
             self.length = len(self.body)
-        
-            return 1
-        return 0
+
+            return True # if food eaten
+        return # if not food eaten
 
     def turn(self, turn_direction):
         self.head.direction = turn_direction
-        # self.turn_points.append((self.head.x, self.head.y))
-        # info(str(len(self.body)))
-    
+
     def die(self):
         self.is_dead = True
-        # snake_is_dead = pygame.event.Event(DEADSNAKE, message="Snake is dead")
-        # pygame.event.post(snake_is_dead)
-    
+
     def moveForward(self):
-        # Change position of all snake segments
+        ''' Change the positions of all snake segments '''
+        # Check whether it's already crashed or not
         if self.hasCrashed():
-            repos_food = pygame.event.Event(REFOOD, message="Reposition Food")
-            pygame.event.post(repos_food)
-            self.__init__()
+            # repos_food = pygame.event.Event(REFOOD, message="Reposition Food")
+            # pygame.event.post(repos_food)
+            self.reset()
             self.all_pos = []
 
         elif not self.is_dead:
+            # Change the x and y coordinates of the head 1 cell unit in the snake's direction
             self.head.x += self.head.direction.x * GRID_WIDTH
             self.head.y += self.head.direction.y * GRID_HEIGHT
 
             # handle entering boundaries
-            if self.head.x < 0:
-                self.head.x = WIDTH - GRID_WIDTH
-            elif self.head.x > WIDTH-5:
+            if self.head.x < 0: # leaves the left
+                self.head.x = WIDTH - GRID_WIDTH 
+                # WIDTH - GRID_WIDTH because the top-left of the head has to move into the screen by at least 1 
+                # cell unit/width, not the edge/outside of the screen. Same with HEIGHT - GRID_HEIGHT
+            elif self.head.x > WIDTH-5:  # leaves the right
                 self.head.x = 0 
-            if self.head.y < 0:
-                self.head.y = HEIGHT - GRID_HEIGHT
-            elif self.head.y > HEIGHT-5:
+            if self.head.y < 0: # leaves the top
+                self.head.y = HEIGHT - GRID_HEIGHT 
+            elif self.head.y > HEIGHT-5: # leaves the bottom
                 self.head.y = 0 
 
-            self.head.pos = (self.head.x, self.head.y)
-            # self.head.ind += 1
-            self.all_pos.append(self.head.pos)
+            self.head.pos = (self.head.x, self.head.y) # Update the position of the head and save it as the 
+            self.all_pos.append(self.head.pos)  # last position in all_pos
 
-            for i in range(1, len(self.body)): # segment in self.body:
+            # Shift the segments along
+            # Here, the segments will get the previous positions of the segments in front of them
+            for i in range(1, len(self.body)): # Not from the first, because I'm not shifting the head.
                 try:
-                    segment = self.body[i]
-                    # segment.ind += 1
-                    segment.pos = self.all_pos[segment.ind]
-                    segment.x = segment.pos[0]
-                    segment.y = segment.pos[1]
+                    segment = self.body[i] # get segment
+                    segment.pos = self.all_pos[segment.ind] # get the position using its index, 1 more than the
+                    segment.x = segment.pos[0]              # next one
+                    segment.y = segment.pos[1] # update its x and y to the position returned
                 except IndexError:
-                    info('list index out of range')
-                    # print(self.all_pos)
+                    pass # list index out of range
             
-            if len(self.body) > 2:
+            # Make the number of positions no longer than the number of segments, ie, truncate all_pos to 
+            # contain only as many positions as the number of segments.
+            if len(self.body) > 1: 
                 self.all_pos = self.all_pos[-len(self.body):]
     
     def draw(self):
@@ -197,12 +215,8 @@ class Snake(object):
 
     def hasCrashed(self):
         self.all_pos = self.all_pos[-len(self.body):]
-        # if self.head.x>=WIDTH or self.head.x<0 or self.head.y>=HEIGHT or self.head.y<0:
-        #     self.die()
-        #     info("Snake is is_dead")
         if self.head.pos in self.all_pos[:-1]:
             self.die()
-        # self.just_crashed.append(self.is_dead)
         return self.is_dead
 
 
